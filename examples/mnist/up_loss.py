@@ -62,7 +62,7 @@ def main(test_data_index=0):
     # Load the MNIST dataset
     train, test = chainer.datasets.get_mnist()
 
-    ifc = InfluenceFunctionsCalculator(classifier_model, model_filepath)
+    ifc = InfluenceFunctionsCalculator(classifier_model)
     ifc.calc_s_test(train, test[test_data_index:test_data_index+1])
 
     loss_list = []
@@ -126,5 +126,6 @@ def main(test_data_index=0):
 
 
 if __name__ == '__main__':
-    for i in range(30):
-        main(test_data_index=i)
+    #for i in range(30):
+    #    main(test_data_index=i)
+    main(test_data_index=29)
