@@ -20,15 +20,17 @@ class InfluenceFunctionsCalculator(object):
     STATE_INPUT_GRAD_PERTURBED = 'input_grad_perturbed'
     STATE_INPUT_GRAD_ORIGINAL = 'input_grad_original'
 
-    def __init__(self, target):
+    def __init__(self, target, device=-1):
         """
         
         Args:
             target (Chain): model instance whose influence functions to be 
                             calculated
+            device (int): device id used for converter
         """
         super(InfluenceFunctionsCalculator, self).__init__()
         self.target = target  # type: Chain
+        self.device = device
 
         # Init states
         self._init_infl_states()
@@ -41,7 +43,7 @@ class InfluenceFunctionsCalculator(object):
 
     def _calc_and_register_grad(self, batch, key, lossfun, converter):
         self.target.cleargrads()
-        loss = lossfun(*converter(batch))  # type: Variable
+        loss = lossfun(*converter(batch, device=self.device))  # type: Variable
         loss.backward()
         # If we need grad of Variables, not only parameters, use below
         # loss.backward(retain_grad=True)
@@ -124,13 +126,15 @@ class InfluenceFunctionsCalculator(object):
 
             # 2. Pertuabation of params and calc grad of perturbed param
             for name, param in self.target.namedparams():
-                param = param + epsilon * states[name][self.STATE_HINV_V]
+                #param = param + epsilon * states[name][self.STATE_HINV_V]
+                param.data = param.data + epsilon * states[name][self.STATE_HINV_V]
             self._calc_and_register_grad(train_batch, self.STATE_GRAD_PERTURBED, lossfun,
                                          converter)
 
             # 3. Revert params
             for name, param in self.target.namedparams():
-                param = states[name][self.STATE_PARAM_ORIGINAL]
+                # param = states[name][self.STATE_PARAM_ORIGINAL]
+                param.data = states[name][self.STATE_PARAM_ORIGINAL]
             #serializers.load_npz(self.target_filepath, self.target)
 
             # 4. Update HinvV
@@ -184,7 +188,7 @@ class InfluenceFunctionsCalculator(object):
 
     def _calc_and_register_input_grad(self, z, key, lossfun, converter):
         self.target.cleargrads()
-        x_batch, y_batch = converter(z)
+        x_batch, y_batch = converter(z, device=self.device)
         x_var = Variable(x_batch)
         y_var = Variable(y_batch)
         loss = lossfun(x_var, y_var)  # type: Variable
@@ -199,16 +203,18 @@ class InfluenceFunctionsCalculator(object):
         states = self._infl_states
         # 1. Pertuabation of params and calc grad of perturbed param
         for name, param in self.target.namedparams():
-            param = param + epsilon * states[name][self.STATE_HINV_V]
+            #print('B param.data', param.data)
+            param.data = param.data + epsilon * states[name][self.STATE_HINV_V]
+            #print('A param.data', param.data)
         self._calc_and_register_input_grad(z, self.STATE_INPUT_GRAD_PERTURBED,
                                            lossfun,
                                            converter)
 
         # 2. Revert params
         for name, param in self.target.namedparams():
-            param = states[name][self.STATE_PARAM_ORIGINAL]
+            param.data = states[name][self.STATE_PARAM_ORIGINAL]
         self._calc_and_register_input_grad(z, self.STATE_INPUT_GRAD_ORIGINAL,
                                            lossfun,
                                            converter)
-        final_loss = - (self._infl_states[self.STATE_INPUT_GRAD_PERTURBED] - self._infl_states[self.STATE_INPUT_GRAD_ORIGINAL]) / epsilon
-        return final_loss
+        pert_loss = - (self._infl_states[self.STATE_INPUT_GRAD_PERTURBED] - self._infl_states[self.STATE_INPUT_GRAD_ORIGINAL]) / epsilon
+        return pert_loss

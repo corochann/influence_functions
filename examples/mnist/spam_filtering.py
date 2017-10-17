@@ -1,6 +1,9 @@
 """
-This script calculates I_up_loss to see which training data influences the most 
-best/worst to the test data, specified by `test_data_index`.
+This script calculates I_up_loss(z_i, z_i) to see which training data 
+is most confusing to the model.
+
+Refer section 5.4 of the paper,
+https://arxiv.org/pdf/1703.04730.pdf
 """
 from __future__ import print_function
 import argparse
@@ -11,6 +14,7 @@ import os
 from time import time
 
 import numpy
+from tqdm import tqdm
 
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -26,9 +30,10 @@ import mlp
 
 sys.path.append(os.pardir)
 sys.path.append(os.path.join(os.pardir, os.pardir))
-from influence_functions import InfluenceFunctionsCalculator
+from myutils.influence_functions import InfluenceFunctionsCalculator
 
-def main(test_data_index=0):
+
+def main(train_data_index=0):
     parser = argparse.ArgumentParser(description='Chainer example: MNIST')
     parser.add_argument('--batchsize', '-b', type=int, default=100,
                         help='Number of images in each mini-batch')
@@ -55,30 +60,33 @@ def main(test_data_index=0):
     # iteration, which will be used by the PrintReport extension below.
     model = mlp.MLP(args.unit, 10)
     classifier_model = L.Classifier(model)
+    # Load the model
+    model_filepath = '{}/clf.model'.format(args.out)
+    serializers.load_npz(model_filepath, classifier_model)
     if args.gpu >= 0:
         chainer.cuda.get_device_from_id(args.gpu).use()  # Make a specified GPU current
         classifier_model.to_gpu()  # Copy the model to the GPU
 
-    # Load the model
-    model_filepath = '{}/clf.model'.format(args.out)
-    serializers.load_npz(model_filepath, classifier_model)
-
     # Load the MNIST dataset
     train, test = chainer.datasets.get_mnist()
 
-    ifc = InfluenceFunctionsCalculator(classifier_model)
-
-    t0 = time()
-    ifc.calc_s_test(train, test[test_data_index:test_data_index+1])
-    t1 = time()
-    print('calc_s_test, time: {}'.format(t1 - t0))
+    ifc = InfluenceFunctionsCalculator(classifier_model, device=args.gpu)
 
     loss_list = []
     t0 = time()
-    size = len(train)
+    #size = len(train)
+    size = 1000
     print('Checking {} points...'.format(size))
-    for index in range(size):  #1000
+    for index in tqdm(range(size)):
+        # t0in = time()
+        ifc.calc_s_test(train, train[index:index + 1], r=2)
+        # t1in = time()
+        # print('{}-th calc_s_test, time: {}'.format(index, t1in - t0in))
+
+        # t0in = time()
         loss = ifc.I_up_loss(train[index:index+1])
+        # t1in = time()
+        # print('{}-th calc_up_loss, time: {}'.format(index, t1in - t0in))
         #print('index', index, loss)
         loss_list.append(loss)
     t1 = time()
@@ -89,19 +97,20 @@ def main(test_data_index=0):
     print('BEST100:  ', infl_index[:30], loss_array[infl_index[:30]])
     print('WORST100: ', infl_index[::-1][:30], loss_array[infl_index[::-1][:30]])
 
-    # Visualize test image
-    if not os.path.exists(str(test_data_index)):
-        os.mkdir(str(test_data_index))
+    # Visualize confusing image
+    dirpath = 'spam_filtering'
+    if not os.path.exists(dirpath):
+        os.mkdir(dirpath)
 
-    plt.figure()
-    img = (test[test_data_index][0] * 255).astype(numpy.int32).reshape(28, 28)
-    plt.imshow(img, cmap='gray')
-    #plt.title("No.{0} / Answer:{1}, Predict:{}".format(i, test[i][1], prediction))
-    plt.title(
-        "No.{0} / Answer:{1}".format(test_data_index, test[test_data_index][1]))
-    plt.savefig('{}/test.png'.format(test_data_index))
+    # plt.figure()
+    # img = (test[train_data_index][0] * 255).astype(numpy.int32).reshape(28, 28)
+    # plt.imshow(img, cmap='gray')
+    # #plt.title("No.{0} / Answer:{1}, Predict:{}".format(i, test[i][1], prediction))
+    # plt.title(
+    #     "No.{0} / Answer:{1}".format(train_data_index, test[train_data_index][1]))
+    # plt.savefig('{}/test.png'.format(train_data_index))
 
-    def plot(mode='best'):
+    def plot(mode='best', dirpath='spam_filtering'):
         ROW = 4
         COLUMN = 5
         # show graphical results of first 20 data to understand what's going on in inference stage
@@ -125,17 +134,19 @@ def main(test_data_index=0):
             example = (train[ind][0] * 255).astype(numpy.int32).reshape(28, 28)
             plt.subplot(ROW, COLUMN, i+1)
             plt.imshow(example, cmap='gray')
-            plt.title("{}/A{},P:{},I={:.2}"
-                      .format(i, train[ind][1], prediction, loss_array[ind]))
+            #plt.title("{}/A{},P:{},I={:.2}"
+            #           .format(i, train[ind][1], prediction, loss_array[ind]))
+            plt.title("{}/A{},P:{}"
+                      .format(i, train[ind][1], prediction))
             plt.axis("off")
         plt.tight_layout()
-        plt.savefig('{}/train_{}.png'.format(test_data_index, mode))
+        plt.savefig('{}/train_{}.png'.format(dirpath, mode))
 
-    plot('best')
+    plot('best')  # it shows most suspicious data
     plot('worst')
 
 
 if __name__ == '__main__':
     #for i in range(30):
     #    main(test_data_index=i)
-    main(test_data_index=29)
+    main(train_data_index=29)
