@@ -21,12 +21,13 @@ import chainer.links as L
 from chainer import training
 from chainer.training import extensions
 from chainer import serializers
+import cupy
 
 import mlp
 
 sys.path.append(os.pardir)
 sys.path.append(os.path.join(os.pardir, os.pardir))
-from influence_functions import InfluenceFunctionsCalculator
+from myutils.influence_functions import InfluenceFunctionsCalculator
 
 def main(test_data_index=0):
     parser = argparse.ArgumentParser(description='Chainer example: MNIST')
@@ -66,7 +67,7 @@ def main(test_data_index=0):
     # Load the MNIST dataset
     train, test = chainer.datasets.get_mnist()
 
-    ifc = InfluenceFunctionsCalculator(classifier_model)
+    ifc = InfluenceFunctionsCalculator(classifier_model, device=args.gpu)
 
     t0 = time()
     ifc.calc_s_test(train, test[test_data_index:test_data_index+1])
@@ -79,6 +80,8 @@ def main(test_data_index=0):
     print('Checking {} points...'.format(size))
     for index in range(size):  #1000
         loss = ifc.I_up_loss(train[index:index+1])
+        if cupy.get_array_module(loss)==cupy:
+            loss = loss.get()
         #print('index', index, loss)
         loss_list.append(loss)
     t1 = time()
